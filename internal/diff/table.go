@@ -418,6 +418,9 @@ func diffTables(oldTable, newTable *ir.Table, targetSchema string, targetMajorVe
 		diff.PersistenceChanged = true
 	}
 
+	// Check for partition parent or bound changes (#639)
+	diffPartition(diff, oldTable, newTable)
+
 	// Return nil if no changes
 	if len(diff.AddedColumns) == 0 && len(diff.DroppedColumns) == 0 &&
 		len(diff.ModifiedColumns) == 0 && len(diff.AddedConstraints) == 0 &&
@@ -427,7 +430,7 @@ func diffTables(oldTable, newTable *ir.Table, targetSchema string, targetMajorVe
 		len(diff.DroppedTriggers) == 0 && len(diff.ModifiedTriggers) == 0 &&
 		len(diff.AddedPolicies) == 0 && len(diff.DroppedPolicies) == 0 &&
 		len(diff.ModifiedPolicies) == 0 && len(diff.RLSChanges) == 0 &&
-		!diff.CommentChanged && !diff.PersistenceChanged {
+		!diff.CommentChanged && !diff.PersistenceChanged && !diff.PartitionChanged {
 		return nil
 	}
 

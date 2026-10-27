@@ -830,6 +830,12 @@ func (p *Plan) writeTableChanges(summary *strings.Builder, c *color.Color) {
 					continue
 				}
 
+				// Partition detach/attach: both are a modification of the table
+				if subRes.subType == diff.DiffTypeTablePartition.String() {
+					fmt.Fprintf(summary, "    %s %s (%s partition)\n", c.PlanSymbol("change"), objectName, subRes.operation)
+					continue
+				}
+
 				// Handle online index replacement display
 				if subRes.subType == diff.DiffTypeTableIndex.String() && subRes.operation == diff.DiffOperationAlter.String() {
 					subSymbol := c.PlanSymbol("change")

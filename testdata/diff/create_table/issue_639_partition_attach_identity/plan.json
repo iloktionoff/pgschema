@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "pgschema_version": "1.13.4",
+  "created_at": "1970-01-01T00:00:00Z",
+  "source_fingerprint": {
+    "hash": "b2ce6b75cd383091cec33cecd6dee5c36e38731c901b43f1e014ed05d8b0d194"
+  },
+  "groups": [
+    {
+      "steps": [
+        {
+          "sql": "ALTER TABLE events ATTACH PARTITION events_2026_02 FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.events_2026_02"
+        }
+      ]
+    }
+  ]
+}

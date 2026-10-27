@@ -25,6 +25,7 @@ const (
 	DiffTypeTableColumnComment
 	DiffTypeTableIndexComment
 	DiffTypeTablePersistence
+	DiffTypeTablePartition
 	DiffTypeView
 	DiffTypeViewTrigger
 	DiffTypeViewComment
@@ -70,6 +71,8 @@ func (d DiffType) String() string {
 		return "table.index.comment"
 	case DiffTypeTablePersistence:
 		return "table.persistence"
+	case DiffTypeTablePartition:
+		return "table.partition"
 	case DiffTypeView:
 		return "view"
 	case DiffTypeViewTrigger:
@@ -146,6 +149,8 @@ func (d *DiffType) UnmarshalJSON(data []byte) error {
 		*d = DiffTypeTableIndexComment
 	case "table.persistence":
 		*d = DiffTypeTablePersistence
+	case "table.partition":
+		*d = DiffTypeTablePartition
 	case "view":
 		*d = DiffTypeView
 	case "view.trigger":
@@ -199,8 +204,11 @@ const (
 	// for dependency handling. The object will be recreated, so this should be
 	// counted as a modification in summaries, not a destruction.
 	DiffOperationRecreate
-	// DiffOperationAttach indicates an explicit partition index attachment.
+	// DiffOperationAttach indicates an explicit partition index attachment, or
+	// a table attached as a partition (DiffTypeTablePartition).
 	DiffOperationAttach
+	// DiffOperationDetach indicates a table detached from its partition parent.
+	DiffOperationDetach
 )
 
 // String returns the string representation of DiffOperation
@@ -216,6 +224,8 @@ func (d DiffOperation) String() string {
 		return "recreate"
 	case DiffOperationAttach:
 		return "attach"
+	case DiffOperationDetach:
+		return "detach"
 	default:
 		return "unknown"
 	}
@@ -244,6 +254,8 @@ func (d *DiffOperation) UnmarshalJSON(data []byte) error {
 		*d = DiffOperationRecreate
 	case "attach":
 		*d = DiffOperationAttach
+	case "detach":
+		*d = DiffOperationDetach
 	default:
 		return fmt.Errorf("unknown diff operation: %s", s)
 	}
@@ -454,6 +466,12 @@ type tableDiff struct {
 	OldComment         string
 	NewComment         string
 	PersistenceChanged bool
+	// PartitionChanged is set when the partition parent or bound differs. The
+	// old parent (empty when the table stood alone) names the DETACH; the new
+	// parent and bound come from Table. See partition.go. (#639)
+	PartitionChanged     bool
+	OldPartitionOf       string
+	OldPartitionOfSchema string
 }
 
 // ColumnDiff represents changes to a column
@@ -672,6 +690,9 @@ func generateMigration(oldIR, newIR *ir.IR, targetSchema string, qualifySchema b
 				}
 			} else {
 				if tableDiff := diffTables(oldTable, newTable, targetSchema, diff.targetMajorVersion); tableDiff != nil {
+					if tableDiff.PartitionChanged && newTable.PartitionOf != "" {
+						tableDiff.keepConstraintsAdoptedByAttach(newTables[partitionParentKey(newTable)])
+					}
 					diff.modifiedTables = append(diff.modifiedTables, tableDiff)
 				}
 			}
@@ -2331,6 +2352,10 @@ func (d *ddlDiff) generateModifySQL(targetSchema string, collector *diffCollecto
 	// (Re)create the dependent foreign keys now that the replacement constraints exist
 	generateDeferredConstraintsSQL(d.fkPostAdds, targetSchema, collector)
 
+	// Attach partitions now that the tables carry what the parent requires
+	// (see partition.go)
+	generateAttachPartitionsSQL(d.modifiedTables, targetSchema, collector)
+
 	// Create views deferred from generateCreateSQL — their bodies reference
 	// columns just added by ALTER TABLE above (issue #414). Likewise, emit
 	// any functions whose view dependency was on those deferred views.
@@ -2457,6 +2482,10 @@ func (d *ddlDiff) generateDropSQL(targetSchema string, collector *diffCollector,
 	// Drop views - filter out pre-dropped ones to avoid duplicate drops
 	viewsToDrop := filterPreDroppedViews(d.droppedViews, preDroppedViews)
 	generateDropViewsSQL(viewsToDrop, targetSchema, collector)
+
+	// Detach partitions that leave their parent, before the parent may be
+	// dropped and before any partition is created (see partition.go)
+	generateDetachPartitionsSQL(d.modifiedTables, targetSchema, collector)
 
 	// Drop tables
 	generateDropTablesSQL(d.droppedTables, targetSchema, collector)

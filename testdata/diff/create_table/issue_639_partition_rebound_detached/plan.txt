@@ -1,0 +1,20 @@
+Plan: 2 to modify.
+
+Summary by type:
+  tables: 2 to modify
+
+Tables:
+  ~ events_2026_01
+    ~ events_2026_01 (detach partition)
+    ~ events_2026_01 (attach partition)
+  ~ events_2026_02
+    ~ events_2026_02 (attach partition)
+
+DDL to be executed:
+--------------------------------------------------
+
+ALTER TABLE events DETACH PARTITION events_2026_01;
+
+ALTER TABLE events ATTACH PARTITION events_2026_01 FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+
+ALTER TABLE events ATTACH PARTITION events_2026_02 FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');

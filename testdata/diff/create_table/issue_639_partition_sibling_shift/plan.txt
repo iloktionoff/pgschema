@@ -1,0 +1,26 @@
+Plan: 1 to add, 2 to modify.
+
+Summary by type:
+  tables: 1 to add, 2 to modify
+
+Tables:
+  ~ metrics_a
+    ~ metrics_a (detach partition)
+    ~ metrics_a (attach partition)
+  ~ metrics_b
+    ~ metrics_b (detach partition)
+    ~ metrics_b (attach partition)
+  + metrics_c
+
+DDL to be executed:
+--------------------------------------------------
+
+ALTER TABLE metrics DETACH PARTITION metrics_a;
+
+ALTER TABLE metrics DETACH PARTITION metrics_b;
+
+CREATE TABLE IF NOT EXISTS metrics_c PARTITION OF metrics FOR VALUES FROM (18) TO (30);
+
+ALTER TABLE metrics ATTACH PARTITION metrics_a FOR VALUES FROM (0) TO (15);
+
+ALTER TABLE metrics ATTACH PARTITION metrics_b FOR VALUES FROM (15) TO (18);
