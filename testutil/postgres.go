@@ -97,6 +97,11 @@ func ParseSQLToIRWithSetup(t *testing.T, embeddedPG *postgres.EmbeddedPostgres, 
 		t.Fatalf("Failed to set search_path: %v", err)
 	}
 
+	// Mirror ApplySchema: mutually recursive functions can't be created with validation on
+	if _, err := conn.ExecContext(ctx, "SET check_function_bodies = off"); err != nil {
+		t.Fatalf("Failed to disable check_function_bodies: %v", err)
+	}
+
 	// Execute optional setup SQL (e.g., CREATE EXTENSION for types in public schema)
 	// This runs after schema recreation so extensions won't be dropped
 	if setupSQL != "" {

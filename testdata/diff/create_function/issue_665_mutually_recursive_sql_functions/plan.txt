@@ -1,0 +1,29 @@
+Plan: 2 to add.
+
+Summary by type:
+  functions: 2 to add
+
+Functions:
+  + a
+  + b
+
+DDL to be executed:
+--------------------------------------------------
+
+CREATE OR REPLACE FUNCTION a(
+    n integer
+)
+RETURNS integer
+LANGUAGE sql
+VOLATILE
+AS $$ SELECT CASE WHEN n <= 0 THEN 0 ELSE b(n - 1) END
+$$;
+
+CREATE OR REPLACE FUNCTION b(
+    n integer
+)
+RETURNS integer
+LANGUAGE sql
+VOLATILE
+AS $$ SELECT CASE WHEN n <= 0 THEN 1 ELSE a(n - 1) END
+$$;

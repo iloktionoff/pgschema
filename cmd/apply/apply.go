@@ -246,6 +246,12 @@ func ApplyMigration(config *ApplyConfig, provider postgres.DesiredStateProvider)
 		}
 	}
 
+	// Skip function body validation, as pg_dump does: mutually recursive
+	// functions cannot be created in any order while validation is on.
+	if _, err = util.ExecContextWithLogging(ctx, conn, "SET check_function_bodies = off", "disable function body validation"); err != nil {
+		return fmt.Errorf("failed to disable check_function_bodies: %w", err)
+	}
+
 	// Set search_path to target schema for unqualified table references
 	if config.Schema != "" && config.Schema != "public" {
 		quotedSchema := ir.QuoteIdentifier(config.Schema)
