@@ -689,6 +689,12 @@ func generateMigration(oldIR, newIR *ir.IR, targetSchema string, qualifySchema b
 					diff.modifiedTables = append(diff.modifiedTables, tableDiff)
 				}
 			} else {
+				// A partition that leaves its parent keeps the constraint copies
+				// it inherited, so diff against the old state that DETACH
+				// leaves behind (see partition.go)
+				if oldTable.PartitionOf != "" && partitionChanged(oldTable, newTable) {
+					oldTable = withConstraintsRetainedByDetach(oldTable, oldTables[partitionParentKey(oldTable)])
+				}
 				if tableDiff := diffTables(oldTable, newTable, targetSchema, diff.targetMajorVersion); tableDiff != nil {
 					if tableDiff.PartitionChanged && newTable.PartitionOf != "" {
 						tableDiff.keepConstraintsAdoptedByAttach(newTables[partitionParentKey(newTable)])

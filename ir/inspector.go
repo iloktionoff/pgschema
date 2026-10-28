@@ -766,10 +766,12 @@ func (i *Inspector) buildConstraints(ctx context.Context, schema *IR, targetSche
 	return nil
 }
 
-// buildInheritedConstraints records the catalog names of the PRIMARY KEY and
-// UNIQUE constraints that partitions inherited from their parents. They are not
-// managed constraints (see GetConstraintsForSchema), but creation planning needs
-// their names to recreate them explicitly (issue #653).
+// buildInheritedConstraints records the catalog names of the PRIMARY KEY,
+// UNIQUE and FOREIGN KEY constraints that partitions inherited from their
+// parents. They are not managed constraints (see GetConstraintsForSchema), but
+// creation planning needs their names to recreate them explicitly (issue #653)
+// and partition detachment needs them to reconcile the copies the child keeps
+// (issue #639).
 func (i *Inspector) buildInheritedConstraints(ctx context.Context, schema *IR, targetSchema string) error {
 	rows, err := i.queries.GetInheritedPartitionConstraintsForSchema(ctx, sql.NullString{String: targetSchema, Valid: true})
 	if err != nil {

@@ -1828,20 +1828,29 @@ func findArrayClose(expr string, startIdx int) int {
 // the child and ATTACH PARTITION rejects a child that carries one of its own,
 // so a plan that attaches a standalone table must not add it first. Parents
 // outside the schema are not visible here and are left alone. (#639)
+//
+// Which columns carry identity is read for every table before any is cleared:
+// in a root → partition → sub-partition hierarchy the middle table is both a
+// child and a parent, and clearing it first would hide the identity its own
+// partitions inherit, so the result would depend on map iteration order.
 func stripInheritedIdentity(schema *Schema) {
+	identity := make(map[string]map[string]bool, len(schema.Tables))
+	for name, table := range schema.Tables {
+		columns := make(map[string]bool)
+		for _, column := range table.Columns {
+			if column.Identity != nil {
+				columns[column.Name] = true
+			}
+		}
+		identity[name] = columns
+	}
 	for _, table := range schema.Tables {
 		if table.PartitionOf == "" || (table.PartitionOfSchema != "" && table.PartitionOfSchema != schema.Name) {
 			continue
 		}
-		parent := schema.Tables[table.PartitionOf]
-		if parent == nil {
+		parentIdentity, visible := identity[table.PartitionOf]
+		if !visible {
 			continue
-		}
-		parentIdentity := make(map[string]bool)
-		for _, column := range parent.Columns {
-			if column.Identity != nil {
-				parentIdentity[column.Name] = true
-			}
 		}
 		for _, column := range table.Columns {
 			if parentIdentity[column.Name] {

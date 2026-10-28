@@ -2,6 +2,7 @@ package diff
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/pgplex/pgschema/ir"
 )
@@ -20,6 +21,20 @@ import (
 //     still in place.
 //   - Every ATTACH runs at the end of the table modifications, once the child
 //     has the columns and constraints the parent requires of it.
+//
+// Constraints follow the child across the two halves. DETACH turns the copies
+// of the parent's PRIMARY KEY, UNIQUE and FOREIGN KEY constraints into local
+// constraints of the child (its CHECK copies already appear in the IR), so
+// withConstraintsRetainedByDetach adds them to the old state before the diff:
+// a standalone table that declares the same constraint keeps it, one that does
+// not drops it. ATTACH in turn adopts an existing copy that matches the new
+// parent's constraint, so keepConstraintsAdoptedByAttach leaves those in place
+// rather than rebuilding the index or re-validating the foreign key.
+//
+// Not handled: DETACH fails when rows of the partition are referenced through
+// a foreign key that points at the parent (PostgreSQL checks the referencing
+// rows at detach time). Dropping and re-validating such foreign keys around
+// the re-attach is left to the operator.
 
 // partitionParentSchema returns the schema of the table's partition parent, or
 // "" when the table is not a partition.
@@ -42,16 +57,59 @@ func partitionParentKey(table *ir.Table) string {
 	return partitionParentSchema(table) + "." + table.PartitionOf
 }
 
+// partitionChanged reports whether the table's partition parent or bound
+// differs between the two states.
+func partitionChanged(oldTable, newTable *ir.Table) bool {
+	return oldTable.PartitionOf != newTable.PartitionOf ||
+		partitionParentSchema(oldTable) != partitionParentSchema(newTable) ||
+		oldTable.PartitionBound != newTable.PartitionBound
+}
+
 // diffPartition records a changed partition parent or bound on the diff.
 func diffPartition(diff *tableDiff, oldTable, newTable *ir.Table) {
-	if oldTable.PartitionOf == newTable.PartitionOf &&
-		partitionParentSchema(oldTable) == partitionParentSchema(newTable) &&
-		oldTable.PartitionBound == newTable.PartitionBound {
+	if !partitionChanged(oldTable, newTable) {
 		return
 	}
 	diff.PartitionChanged = true
 	diff.OldPartitionOf = oldTable.PartitionOf
 	diff.OldPartitionOfSchema = partitionParentSchema(oldTable)
+}
+
+// withConstraintsRetainedByDetach returns a copy of the partition oldTable
+// whose constraints include the copies of its parent's primary key, unique and
+// foreign key constraints, under the names PostgreSQL gave them on the child.
+// The inspector leaves those copies out of a partition's IR, but once the table
+// is detached they are ordinary local constraints: a desired standalone table
+// that declares the same constraint under the same name must not add it again
+// (PostgreSQL refuses a second primary key), and one that does not declare it
+// must drop it. Copies whose catalog name is unknown are left out.
+func withConstraintsRetainedByDetach(oldTable, parent *ir.Table) *ir.Table {
+	if parent == nil || len(oldTable.InheritedConstraints) == 0 {
+		return oldTable
+	}
+	table := *oldTable
+	table.Constraints = make(map[string]*ir.Constraint, len(oldTable.Constraints)+len(oldTable.InheritedConstraints))
+	for name, constraint := range oldTable.Constraints {
+		table.Constraints[name] = constraint
+	}
+	for parentName, childName := range oldTable.InheritedConstraints {
+		source := parent.Constraints[parentName]
+		if source == nil || table.Constraints[childName] != nil {
+			continue
+		}
+		switch source.Type {
+		case ir.ConstraintTypePrimaryKey, ir.ConstraintTypeUnique, ir.ConstraintTypeForeignKey:
+		default:
+			continue
+		}
+		retained := *source
+		retained.Schema = oldTable.Schema
+		retained.Table = oldTable.Name
+		retained.Name = childName
+		retained.Comment = ""
+		table.Constraints[childName] = &retained
+	}
+	return &table
 }
 
 // keepConstraintsAdoptedByAttach drops from DroppedConstraints the primary
@@ -88,15 +146,23 @@ func parentSuppliesConstraint(parent *ir.Table, constraint *ir.Constraint) bool 
 		if candidate.Type != constraint.Type || !sameConstraintColumns(candidate.Columns, constraint.Columns) {
 			continue
 		}
+		// ATTACH adopts a copy by its columns and index shape alone and keeps
+		// the copy's own deferrability and referential actions, so anything
+		// that would leave the child differing from the parent must instead
+		// be dropped and rebuilt by the attach.
+		if candidate.Deferrable != constraint.Deferrable ||
+			candidate.InitiallyDeferred != constraint.InitiallyDeferred ||
+			candidate.IsTemporal != constraint.IsTemporal {
+			continue
+		}
 		if constraint.Type == ir.ConstraintTypeForeignKey {
 			if candidate.ReferencedSchema != constraint.ReferencedSchema ||
 				candidate.ReferencedTable != constraint.ReferencedTable ||
 				!sameConstraintColumns(candidate.ReferencedColumns, constraint.ReferencedColumns) ||
 				candidate.DeleteRule != constraint.DeleteRule ||
+				!slices.Equal(slices.Sorted(slices.Values(candidate.DeleteSetColumns)), slices.Sorted(slices.Values(constraint.DeleteSetColumns))) ||
 				candidate.UpdateRule != constraint.UpdateRule ||
-				candidate.MatchFull != constraint.MatchFull ||
-				candidate.Deferrable != constraint.Deferrable ||
-				candidate.InitiallyDeferred != constraint.InitiallyDeferred {
+				candidate.MatchFull != constraint.MatchFull {
 				continue
 			}
 		} else if candidate.NullsNotDistinct != constraint.NullsNotDistinct {

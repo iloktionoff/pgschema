@@ -747,3 +747,38 @@ func TestStripSchemaPrefixFromBody_QuotedSchema(t *testing.T) {
 		}
 	}
 }
+
+// In a root → partition → sub-partition hierarchy the middle table is both a
+// child and a parent. Whatever order the tables are visited in, every
+// partition must lose the identity it inherits from the root. (#639)
+func TestStripInheritedIdentityNested(t *testing.T) {
+	build := func() *Schema {
+		identityColumn := func() *Column { return &Column{Name: "id", Identity: &Identity{Generation: "ALWAYS"}} }
+		return &Schema{
+			Name: "public",
+			Tables: map[string]*Table{
+				"root":  {Schema: "public", Name: "root", IsPartitioned: true, Columns: []*Column{identityColumn()}},
+				"mid":   {Schema: "public", Name: "mid", IsPartitioned: true, PartitionOf: "root", Columns: []*Column{identityColumn()}},
+				"leaf":  {Schema: "public", Name: "leaf", PartitionOf: "mid", Columns: []*Column{identityColumn()}},
+				"other": {Schema: "public", Name: "other", PartitionOf: "elsewhere", PartitionOfSchema: "other_schema", Columns: []*Column{identityColumn()}},
+			},
+		}
+	}
+	// Map iteration order varies between runs; repeat so an order-dependent
+	// implementation is caught.
+	for i := 0; i < 50; i++ {
+		schema := build()
+		stripInheritedIdentity(schema)
+		if schema.Tables["root"].Columns[0].Identity == nil {
+			t.Fatal("root lost its own identity")
+		}
+		for _, name := range []string{"mid", "leaf"} {
+			if schema.Tables[name].Columns[0].Identity != nil {
+				t.Fatalf("%s kept the identity inherited from root", name)
+			}
+		}
+		if schema.Tables["other"].Columns[0].Identity == nil {
+			t.Fatal("identity stripped although the parent is not visible")
+		}
+	}
+}
