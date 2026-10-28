@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o pgschema .
 
 # Final stage - Alpine for debugging capabilities
-FROM alpine:3.20
+FROM alpine:3.23
 
 # Install runtime dependencies
 RUN apk add --no-cache \
