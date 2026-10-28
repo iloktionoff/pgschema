@@ -49,7 +49,7 @@ func TestParentSuppliesConstraint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := parentSuppliesConstraint(parent, tt.constraint); got != tt.want {
+			if got := parentSuppliesConstraint(effectiveConstraints(nil, parent), tt.constraint); got != tt.want {
 				t.Errorf("parentSuppliesConstraint() = %v, want %v", got, tt.want)
 			}
 		})
@@ -70,7 +70,8 @@ func TestWithConstraintsRetainedByDetach(t *testing.T) {
 		InheritedConstraints: map[string]string{"events_pkey": "events_2026_01_pkey", "events_account_id_fkey": "events_account_id_fkey", "gone": "gone_copy"},
 	}
 
-	got := withConstraintsRetainedByDetach(child, parent)
+	tables := map[string]*ir.Table{"public.events": parent, "public.events_2026_01": child}
+	got := withConstraintsRetainedByDetach(child, tables)
 
 	if len(child.Constraints) != 1 {
 		t.Fatalf("inspected table modified: %d constraints", len(child.Constraints))
@@ -88,7 +89,33 @@ func TestWithConstraintsRetainedByDetach(t *testing.T) {
 	if got.Constraints[check.Name] != check {
 		t.Error("child's own constraint not carried over")
 	}
-	if same := withConstraintsRetainedByDetach(child, nil); same != child {
+	if same := withConstraintsRetainedByDetach(child, map[string]*ir.Table{}); same != child {
 		t.Error("expected the table itself when the parent is unknown")
+	}
+}
+
+// In a root → partition → sub-partition hierarchy the middle table's IR holds
+// neither its own copy of the root's primary key nor, therefore, the definition
+// the leaf's copy derives from: it has to be resolved up the chain. (#639)
+func TestResolveInheritedConstraintNested(t *testing.T) {
+	rootPK := &ir.Constraint{Schema: "public", Table: "metrics", Name: "metrics_pkey", Type: ir.ConstraintTypePrimaryKey, Columns: constraintColumns("id", "bucket")}
+	root := &ir.Table{Schema: "public", Name: "metrics", IsPartitioned: true, Constraints: map[string]*ir.Constraint{rootPK.Name: rootPK}}
+	mid := &ir.Table{Schema: "public", Name: "metrics_low", IsPartitioned: true, PartitionOf: "metrics", InheritedConstraints: map[string]string{"metrics_pkey": "metrics_low_pkey"}}
+	leaf := &ir.Table{Schema: "public", Name: "metrics_low_b", PartitionOf: "metrics_low", InheritedConstraints: map[string]string{"metrics_low_pkey": "metrics_low_b_pkey"}}
+	tables := map[string]*ir.Table{"public.metrics": root, "public.metrics_low": mid, "public.metrics_low_b": leaf}
+
+	if got := resolveInheritedConstraint(tables, mid, "metrics_low_pkey"); got != rootPK {
+		t.Errorf("resolveInheritedConstraint() = %+v, want the root primary key", got)
+	}
+	if got := resolveInheritedConstraint(tables, mid, "unknown"); got != nil {
+		t.Errorf("resolveInheritedConstraint() = %+v for an unknown copy", got)
+	}
+	retained := withConstraintsRetainedByDetach(leaf, tables).Constraints["metrics_low_b_pkey"]
+	if retained == nil || retained.Type != ir.ConstraintTypePrimaryKey || retained.Table != "metrics_low_b" {
+		t.Errorf("leaf's retained primary key = %+v", retained)
+	}
+	supplied := effectiveConstraints(tables, mid)
+	if len(supplied) != 1 || supplied[0] != rootPK {
+		t.Errorf("effectiveConstraints(mid) = %+v, want the root primary key", supplied)
 	}
 }

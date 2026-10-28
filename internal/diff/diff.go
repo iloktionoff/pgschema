@@ -693,11 +693,11 @@ func generateMigration(oldIR, newIR *ir.IR, targetSchema string, qualifySchema b
 				// it inherited, so diff against the old state that DETACH
 				// leaves behind (see partition.go)
 				if oldTable.PartitionOf != "" && partitionChanged(oldTable, newTable) {
-					oldTable = withConstraintsRetainedByDetach(oldTable, oldTables[partitionParentKey(oldTable)])
+					oldTable = withConstraintsRetainedByDetach(oldTable, oldTables)
 				}
 				if tableDiff := diffTables(oldTable, newTable, targetSchema, diff.targetMajorVersion); tableDiff != nil {
 					if tableDiff.PartitionChanged && newTable.PartitionOf != "" {
-						tableDiff.keepConstraintsAdoptedByAttach(newTables[partitionParentKey(newTable)])
+						tableDiff.keepConstraintsAdoptedByAttach(newTables)
 					}
 					diff.modifiedTables = append(diff.modifiedTables, tableDiff)
 				}
@@ -2355,12 +2355,13 @@ func (d *ddlDiff) generateModifySQL(targetSchema string, collector *diffCollecto
 		generateSequenceOwnedBySQL(seq, targetSchema, DiffOperationAlter, collector)
 	}
 
+	// Attach partitions now that the tables carry what the parent requires
+	// (see partition.go). This precedes the deferred foreign keys because some
+	// of them reference a key the attached table gains from its parent.
+	generateAttachPartitionsSQL(d.modifiedTables, targetSchema, collector)
+
 	// (Re)create the dependent foreign keys now that the replacement constraints exist
 	generateDeferredConstraintsSQL(d.fkPostAdds, targetSchema, collector)
-
-	// Attach partitions now that the tables carry what the parent requires
-	// (see partition.go)
-	generateAttachPartitionsSQL(d.modifiedTables, targetSchema, collector)
 
 	// Create views deferred from generateCreateSQL — their bodies reference
 	// columns just added by ALTER TABLE above (issue #414). Likewise, emit
