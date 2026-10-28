@@ -1477,7 +1477,11 @@ ORDER BY n.nspname, cl.relname, c.contype, c.conname, a.attnum;
 -- recreates them, but their catalog names are needed to recreate them
 -- explicitly when a generated name would otherwise take a standalone index's
 -- name (issue #653), and to reconcile the copies DETACH PARTITION leaves on
--- the child as local constraints (issue #639).
+-- the child as local constraints (issue #639). The pg_inherits join keeps only
+-- copies on a partition of the parent constraint's table: a foreign key that
+-- references a partitioned table also owns one internal sub-constraint per
+-- referenced partition, on the same table and with conparentid set, which is
+-- no inherited copy.
 -- name: GetInheritedPartitionConstraintsForSchema :many
 SELECT
     n.nspname AS table_schema,
@@ -1492,6 +1496,7 @@ JOIN pg_namespace n ON cl.relnamespace = n.oid
 JOIN pg_constraint pc ON pc.oid = c.conparentid
 JOIN pg_class pcl ON pc.conrelid = pcl.oid
 JOIN pg_namespace pn ON pcl.relnamespace = pn.oid
+JOIN pg_inherits i ON i.inhrelid = c.conrelid AND i.inhparent = pc.conrelid
 WHERE n.nspname = $1
     AND c.contype IN ('p', 'u', 'f')
     AND c.conparentid <> 0

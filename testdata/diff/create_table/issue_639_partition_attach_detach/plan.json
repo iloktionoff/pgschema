@@ -1,0 +1,172 @@
+{
+  "version": "1.0.0",
+  "pgschema_version": "1.13.4",
+  "created_at": "1970-01-01T00:00:00Z",
+  "source_fingerprint": {
+    "hash": "9fa6bd7cfda23a1cc3317b7198a13a366e40f7e1e30c78960bb0c3c37dff28f8"
+  },
+  "groups": [
+    {
+      "steps": [
+        {
+          "sql": "ALTER TABLE events DETACH PARTITION events_2026_01;",
+          "type": "table.partition",
+          "operation": "detach",
+          "path": "public.events_2026_01"
+        },
+        {
+          "sql": "ALTER TABLE events DETACH PARTITION events_2026_04;",
+          "type": "table.partition",
+          "operation": "detach",
+          "path": "public.events_2026_04"
+        },
+        {
+          "sql": "ALTER TABLE old_parent DETACH PARTITION kept_child;",
+          "type": "table.partition",
+          "operation": "detach",
+          "path": "public.kept_child"
+        },
+        {
+          "sql": "ALTER TABLE metrics_low DETACH PARTITION metrics_low_a;",
+          "type": "table.partition",
+          "operation": "detach",
+          "path": "public.metrics_low_a"
+        },
+        {
+          "sql": "ALTER TABLE metrics_low DETACH PARTITION metrics_low_b;",
+          "type": "table.partition",
+          "operation": "detach",
+          "path": "public.metrics_low_b"
+        },
+        {
+          "sql": "ALTER TABLE metrics_low DETACH PARTITION metrics_low_d;",
+          "type": "table.partition",
+          "operation": "detach",
+          "path": "public.metrics_low_d"
+        },
+        {
+          "sql": "DROP TABLE IF EXISTS old_parent CASCADE;",
+          "type": "table",
+          "operation": "drop",
+          "path": "public.old_parent"
+        },
+        {
+          "sql": "CREATE TABLE IF NOT EXISTS audit (\n    event_id bigint NOT NULL,\n    at date NOT NULL,\n    note text\n);",
+          "type": "table",
+          "operation": "create",
+          "path": "public.audit"
+        },
+        {
+          "sql": "CREATE TABLE IF NOT EXISTS metrics_high_notes (\n    metric_id integer NOT NULL,\n    bucket integer NOT NULL,\n    note text\n);",
+          "type": "table",
+          "operation": "create",
+          "path": "public.metrics_high_notes"
+        },
+        {
+          "sql": "CREATE TABLE IF NOT EXISTS metrics_low_c PARTITION OF metrics_low FOR VALUES FROM (18) TO (20);",
+          "type": "table",
+          "operation": "create",
+          "path": "public.metrics_low_c"
+        },
+        {
+          "sql": "CREATE TABLE IF NOT EXISTS new_parent (\n    id integer NOT NULL,\n    region text NOT NULL\n) PARTITION BY LIST (region);",
+          "type": "table",
+          "operation": "create",
+          "path": "public.new_parent"
+        },
+        {
+          "sql": "ALTER TABLE audit_log DROP CONSTRAINT audit_log_event_id_at_fkey;",
+          "type": "table.constraint",
+          "operation": "drop",
+          "path": "public.audit_log.audit_log_event_id_at_fkey"
+        },
+        {
+          "sql": "ALTER TABLE events_2026_04 DROP CONSTRAINT events_account_id_fkey;",
+          "type": "table.constraint",
+          "operation": "drop",
+          "path": "public.events_2026_04.events_account_id_fkey"
+        },
+        {
+          "sql": "ALTER TABLE events_2026_04 DROP CONSTRAINT events_amount_check;",
+          "type": "table.constraint",
+          "operation": "drop",
+          "path": "public.events_2026_04.events_amount_check"
+        },
+        {
+          "sql": "ALTER TABLE events ATTACH PARTITION events_2026_01 FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.events_2026_01"
+        },
+        {
+          "sql": "ALTER TABLE events ATTACH PARTITION events_2026_02 FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.events_2026_02"
+        },
+        {
+          "sql": "ALTER TABLE events ATTACH PARTITION events_2026_03 FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.events_2026_03"
+        },
+        {
+          "sql": "ALTER TABLE metrics ATTACH PARTITION metrics_high FOR VALUES FROM (100) TO (200);",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.metrics_high"
+        },
+        {
+          "sql": "ALTER TABLE metrics_low ATTACH PARTITION metrics_low_a FOR VALUES FROM (0) TO (15);",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.metrics_low_a"
+        },
+        {
+          "sql": "ALTER TABLE metrics_low ATTACH PARTITION metrics_low_b FOR VALUES FROM (15) TO (18);",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.metrics_low_b"
+        },
+        {
+          "sql": "ALTER TABLE new_parent ATTACH PARTITION standalone FOR VALUES IN ('us');",
+          "type": "table.partition",
+          "operation": "attach",
+          "path": "public.standalone"
+        },
+        {
+          "sql": "ALTER TABLE audit\nADD CONSTRAINT audit_event_id_at_fkey FOREIGN KEY (event_id, at) REFERENCES events_2026_03 (id, at);",
+          "type": "table.constraint",
+          "operation": "create",
+          "path": "public.audit.audit_event_id_at_fkey"
+        },
+        {
+          "sql": "ALTER TABLE audit_log\nADD CONSTRAINT audit_log_event_id_at_fkey FOREIGN KEY (event_id, at) REFERENCES events_2026_03 (id, at) NOT VALID;",
+          "type": "table.constraint",
+          "operation": "create",
+          "path": "public.audit_log.audit_log_event_id_at_fkey"
+        }
+      ]
+    },
+    {
+      "steps": [
+        {
+          "sql": "ALTER TABLE audit_log VALIDATE CONSTRAINT audit_log_event_id_at_fkey;",
+          "type": "table.constraint",
+          "operation": "create",
+          "path": "public.audit_log.audit_log_event_id_at_fkey"
+        }
+      ]
+    },
+    {
+      "steps": [
+        {
+          "sql": "ALTER TABLE metrics_high_notes\nADD CONSTRAINT metrics_high_notes_metric_id_bucket_fkey FOREIGN KEY (metric_id, bucket) REFERENCES metrics_high_a (id, bucket);",
+          "type": "table.constraint",
+          "operation": "create",
+          "path": "public.metrics_high_notes.metrics_high_notes_metric_id_bucket_fkey"
+        }
+      ]
+    }
+  ]
+}

@@ -2436,6 +2436,7 @@ JOIN pg_namespace n ON cl.relnamespace = n.oid
 JOIN pg_constraint pc ON pc.oid = c.conparentid
 JOIN pg_class pcl ON pc.conrelid = pcl.oid
 JOIN pg_namespace pn ON pcl.relnamespace = pn.oid
+JOIN pg_inherits i ON i.inhrelid = c.conrelid AND i.inhparent = pc.conrelid
 WHERE n.nspname = $1
     AND c.contype IN ('p', 'u', 'f')
     AND c.conparentid <> 0

@@ -739,7 +739,9 @@ func planFKRecreationForReplacedConstraints(modifiedTables []*tableDiff, addedTa
 	// Unique/PK constraints a table gains by being attached as a partition: the
 	// copies of its new parent's keys exist only once ATTACH PARTITION has run,
 	// after the table modifications, so FKs that reference the table through
-	// them wait for the attach the same way (#639).
+	// them wait for the attach the same way (#639). When the attached table is
+	// itself partitioned, ATTACH creates the copies on its partitions too, at
+	// any depth, so they gain the same keys.
 	keysFromAttach := make(map[string][]*ir.Constraint)
 	for _, td := range modifiedTables {
 		if !td.PartitionChanged || td.Table.PartitionOf == "" {
@@ -754,6 +756,23 @@ func planFKRecreationForReplacedConstraints(modifiedTables []*tableDiff, addedTa
 			if c.Type == ir.ConstraintTypeUnique || c.Type == ir.ConstraintTypePrimaryKey {
 				keysFromAttach[key] = append(keysFromAttach[key], c)
 			}
+		}
+	}
+	attachedKeys := make(map[string][]*ir.Constraint, len(keysFromAttach))
+	for key, keys := range keysFromAttach {
+		attachedKeys[key] = keys
+	}
+	for _, tableKey := range sortedKeys(newTables) {
+		if _, attached := attachedKeys[tableKey]; attached {
+			continue
+		}
+		for ancestor := newTables[tableKey]; ancestor != nil && ancestor.PartitionOf != ""; {
+			ancestorKey := partitionParentKey(ancestor)
+			if keys, ok := attachedKeys[ancestorKey]; ok {
+				keysFromAttach[tableKey] = append(keysFromAttach[tableKey], keys...)
+				break
+			}
+			ancestor = newTables[ancestorKey]
 		}
 	}
 
@@ -776,13 +795,15 @@ func planFKRecreationForReplacedConstraints(modifiedTables []*tableDiff, addedTa
 			newFK := newTable.Constraints[name]
 			oldBound := fkReferencesAnyConstraint(fk, replaced[fkReferencedTableKey(fk)]) ||
 				fkReferencesAnyUniqueIndex(fk, replacedUniqueIndexes[fkReferencedTableKey(fk)])
-			// A changed FK whose new definition targets a replaced constraint
-			// must also wait for the replacement, even if its old definition
-			// was bound elsewhere.
+			// A changed FK whose new definition targets a replaced constraint,
+			// or a key its referenced table only gains by being attached as a
+			// partition (#639), must also wait for it, even if its old
+			// definition was bound elsewhere.
 			newBound := newFK != nil && !constraintsEqual(fk, newFK) &&
 				(fkReferencesAnyConstraint(newFK, replaced[fkReferencedTableKey(newFK)]) ||
 					fkReferencesAnyUniqueIndex(newFK, replacedUniqueIndexes[fkReferencedTableKey(newFK)]) ||
-					fkReferencesAnyUniqueIndex(newFK, addedUniqueIndexes[fkReferencedTableKey(newFK)]))
+					fkReferencesAnyUniqueIndex(newFK, addedUniqueIndexes[fkReferencedTableKey(newFK)]) ||
+					fkReferencesAnyConstraint(newFK, keysFromAttach[fkReferencedTableKey(newFK)]))
 			if !oldBound && !newBound {
 				continue
 			}
